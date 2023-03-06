@@ -1,5 +1,5 @@
 import spotipy
-import spotipy.util as util
+import tempfile
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
 
@@ -40,26 +40,52 @@ choice = os.environ.get('SPOTIPY_CHOICE')
 if choice is None:
     choice = input('Enter your choice: ')
 
+# Evaluate the user's choice of playlist or all of their tracks
 if choice == 'saved':
-    results = sp.current_user_saved_tracks()
+    total = sp.current_user_saved_tracks(limit=1)['total']
 else:
     playlists = sp.user_playlists(username)
-    if choice in playlists["name"]:
-        results = sp.playlist(playlist_id=choice)
-    else:
+    for playlist in playlists['items']:
+        if playlist['name'] == choice:
+            choice = playlist['id']
+            found = True
+            break
+    if not found:
         print('Playlist not found')
         exit()
+    total = sp.playlist_items(choice, limit=1)['total']
+
+# Initialize the results list
+results = []
+
+# Gather all tracks using int division and a limit of 50
+for i in range(total // 50 + 1):
+    if choice == 'saved':
+        result = sp.current_user_saved_tracks(limit=50, offset=i * 50)
+    else:
+        result = sp.playlist_items(choice, limit=50, offset=i * 50)
+    results.extend(result['items'])
 
 # Creates list of track names, artists, and track ids
 track_names = []
 track_artists = []
 track_ids = []
-for item in results['items']:
+for item in results:
     track = item['track']
     track_names.append(track['name'])
     track_artists.append(track['artists'][0]['name'])
     track_ids.append(track['id'])
 
-print (track_names)
-print (track_artists)
-print (track_ids)
+print(track_names)
+print(track_artists)
+print(track_ids)
+
+# Save the track names, artists, and track ids to a temporary file
+with tempfile.NamedTemporaryFile(mode='w+', dir='.', prefix='tracks_', encoding="utf-8") as fp:
+    for i in range(len(track_names)):
+        fp.write(f'\n{track_names[i]}|{track_artists[i]}|{track_ids[i]}|{market}')
+    # Test to see if the file was written to
+    fp.seek(0)  # Go back to the beginning of the file
+    print(fp.read())  # Print the contents of the file
+    # Set the environment variable to the path of the temporary file
+    os.environ['SPOTIPY_TRACKS'] = fp.name
